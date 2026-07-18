@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>نظام إدارة الرحلات</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap" rel="stylesheet">
+
+<!-- Firebase SDKs -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+
+<style>
+  :root{
+    --primary:#0f766e; --primary-dark:#0b5b54; --accent:#f59e0b;
+    --bg:#f4f6f6; --card:#ffffff; --text:#1f2937; --muted:#6b7280;
+    --danger:#dc2626; --success:#16a34a; --border:#e5e7eb;
+  }
+  *{box-sizing:border-box;}
+  body{
+    font-family:'Cairo',sans-serif; background:var(--bg); color:var(--text);
+    margin:0; padding-bottom:70px; min-height:100vh;
+  }
+  header{
+    background:linear-gradient(135deg,var(--primary),var(--primary-dark));
+    color:#fff; padding:16px 18px; position:sticky; top:0; z-index:50;
+    display:flex; align-items:center; justify-content:space-between;
+    box-shadow:0 2px 8px rgba(0,0,0,.15);
+  }
+  header h1{font-size:18px; margin:0; font-weight:800;}
+  header .user-badge{font-size:12px; opacity:.9;}
+  .container{max-width:640px; margin:0 auto; padding:16px;}
+  .card{
+    background:var(--card); border-radius:14px; padding:16px; margin-bottom:14px;
+    box-shadow:0 1px 4px rgba(0,0,0,.06); border:1px solid var(--border);
+  }
+  .btn{
+    display:inline-block; background:var(--primary); color:#fff; border:none;
+    padding:11px 18px; border-radius:10px; font-family:inherit; font-weight:700;
+    font-size:14px; cursor:pointer; text-align:center; transition:.15s;
+  }
+  .btn:hover{background:var(--primary-dark);}
+  .btn.secondary{background:#fff; color:var(--primary); border:1.5px solid var(--primary);}
+  .btn.danger{background:var(--danger);}
+  .btn.accent{background:var(--accent); color:#1f2937;}
+  .btn.block{width:100%;}
+  .btn:disabled{opacity:.5; cursor:not-allowed;}
+  input, select, textarea{
+    width:100%; padding:11px; border:1.5px solid var(--border); border-radius:10px;
+    font-family:inherit; font-size:14px; margin-bottom:10px; background:#fff; color:var(--text);
+  }
+  label{font-size:13px; font-weight:700; color:var(--muted); display:block; margin-bottom:4px;}
+  .field{margin-bottom:12px;}
+  .tabbar{
+    position:fixed; bottom:0; right:0; left:0; background:#fff; display:flex;
+    border-top:1px solid var(--border); z-index:50; box-shadow:0 -2px 8px rgba(0,0,0,.06);
+  }
+  .tab{
+    flex:1; text-align:center; padding:10px 4px 8px; font-size:11px; color:var(--muted);
+    cursor:pointer; border:none; background:none; font-family:inherit; font-weight:700;
+  }
+  .tab.active{color:var(--primary);}
+  .tab .icon{font-size:19px; display:block; margin-bottom:2px;}
+  .badge{
+    display:inline-block; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:700;
+  }
+  .badge.pending{background:#fef3c7; color:#92400e;}
+  .badge.approved{background:#dcfce7; color:#166534;}
+  .badge.rejected{background:#fee2e2; color:#991b1b;}
+  .badge.paid{background:#dcfce7; color:#166534;}
+  .badge.unpaid{background:#fee2e2; color:#991b1b;}
+  .badge.partial{background:#fef3c7; color:#92400e;}
+  .trip-title{font-size:16px; font-weight:800; margin:0 0 4px;}
+  .trip-meta{font-size:13px; color:var(--muted); margin-bottom:8px; line-height:1.8;}
+  .trip-meta b{color:var(--text);}
+  .row{display:flex; gap:8px;}
+  .row > *{flex:1;}
+  .empty{text-align:center; color:var(--muted); padding:30px 10px; font-size:14px;}
+  .toast{
+    position:fixed; top:70px; right:16px; left:16px; max-width:600px; margin:0 auto;
+    background:#1f2937; color:#fff; padding:12px 16px; border-radius:10px; font-size:13px;
+    z-index:100; text-align:center; box-shadow:0 4px 12px rgba(0,0,0,.2);
+  }
+  .toast.error{background:var(--danger);}
+  .toast.success{background:var(--success);}
+  .hidden{display:none !important;}
+  .divider{border:none; border-top:1px solid var(--border); margin:14px 0;}
+  .link-box{
+    background:#f0fdfa; border:1px dashed var(--primary); border-radius:10px; padding:10px;
+    font-size:12px; word-break:break-all; color:var(--primary-dark); margin-bottom:8px;
+  }
+  .stat-grid{display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:14px;}
+  .stat{background:var(--card); border:1px solid var(--border); border-radius:12px; padding:14px; text-align:center;}
+  .stat .num{font-size:22px; font-weight:800; color:var(--primary);}
+  .stat .lbl{font-size:12px; color:var(--muted); margin-top:2px;}
+  .loading{text-align:center; padding:40px; color:var(--muted);}
+  .auth-box{max-width:400px; margin:60px auto 0;}
+  .auth-box h2{text-align:center;}
+  .switch-link{text-align:center; font-size:13px; color:var(--primary); cursor:pointer; margin-top:8px; font-weight:700;}
+  .commission-form{background:#fffbeb; border:1px solid #fde68a; border-radius:10px; padding:10px; margin-top:8px;}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🧳 نظام الرحلات</h1>
+  <div id="userBadge" class="user-badge hidden">
+    <span id="userNameLbl"></span> · <a id="logoutBtn" style="color:#fff; cursor:pointer; text-decoration:underline;">خروج</a>
+  </div>
+</header>
+
+<div id="toastHolder"></div>
+
+<div class="container" id="app">
+  <div class="loading">جاري التحميل...</div>
+</div>
+
+<div class="tabbar hidden" id="tabbar">
+  <button class="tab" data-tab="trips"><span class="icon">🗺️</span>الرحلات</button>
+  <button class="tab" data-tab="propose"><span class="icon">➕</span>اقترح رحلة</button>
+  <button class="tab" data-tab="mine"><span class="icon">💰</span>رحلاتي وأرباحي</button>
+  <button class="tab hidden" id="adminTabBtn" data-tab="admin"><span class="icon">⚙️</span>الأدمن</button>
+</div>
+
+<script>
+/* =========================================================
+   إعدادات Firebase — لازم تستبدل القيم دي ببيانات مشروعك
+   من Firebase Console > Project Settings > Your apps
+   ========================================================= */
+const firebaseConfig = {
+  apiKey: "YOUR_API_KEY",
+  authDomain: "YOUR_PROJECT.firebaseapp.com",
+  projectId: "YOUR_PROJECT_ID",
+  storageBucket: "YOUR_PROJECT.appspot.com",
+  messagingSenderId: "YOUR_SENDER_ID",
+  appId: "YOUR_APP_ID"
+};
+
+firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth();
+const db = firebase.firestore();
+
+// ضع هنا إيميلات الأدمن (بالإضافة إلى role:"admin" في Firestore)
+const ADMIN_EMAILS = ["admin@example.com"];
+
+let currentUser = null;
+let currentUserData = null;
+let currentTab = "trips";
+let tripsCache = [];
+let bookingsCache = [];
+let refParam = null;
+
+// ---- قراءة رابط الإحالة من العنوان ----
+(function readRef(){
+  const params = new URLSearchParams(window.location.search);
+  if(params.get('ref')) refParam = params.get('ref');
+})();
+
+function toast(msg, type=""){
+  const el = document.createElement('div');
+  el.className = 'toast ' + type;
+  el.textContent = msg;
+  document.getElementById('toastHolder').appendChild(el);
+  setTimeout(()=>el.remove(), 3200);
+}
+
+function escapeHtml(str){
+  const d = document.createElement('div');
+  d.textContent = str ?? '';
+  return d.innerHTML;
+}
+
+function fmtDate(d){
+  try{ return new Date(d).toLocaleDateString('ar-EG', {year:'numeric', month:'long', day:'numeric'}); }
+  catch(e){ return d; }
+}
+
+// ---------------- AUTH ----------------
+auth.onAuthStateChanged(async (user)=>{
+  currentUser = user;
+  if(user){
+    let doc = await db.collection('users').doc(user.uid).get();
+    if(!doc.exists){
+      const isAdmin = ADMIN_EMAILS.includes(user.email);
+      currentUserData = {
+        name: user.email.split('@')[0], email: user.email,
+        role: isAdmin ? 'admin' : 'user', createdAt: Date.now()
+      };
+      await db.collection('users').doc(user.uid).set(currentUserData);
+    } else {
+      currentUserData = doc.data();
+      if(ADMIN_EMAILS.includes(user.email) && currentUserData.role !== 'admin'){
+        currentUserData.role = 'admin';
+        await db.collection('users').doc(user.uid).update({role:'admin'});
+      }
+    }
+    document.getElementById('userBadge').classList.remove('hidden');
+    document.getElementById('userNameLbl').textContent = currentUserData.name || user.email;
+    document.getElementById('tabbar').classList.remove('hidden');
+    document.getElementById('adminTabBtn').classList.toggle('hidden', currentUserData.role !== 'admin');
+    loadAllData();
+  } else {
+    currentUserData = null;
+    document.getElementById('userBadge').classList.add('hidden');
+    document.getElementById('tabbar').classList.add('hidden');
+    renderAuth();
+  }
+});
+
+document.getElementById('logoutBtn').onclick = ()=> auth.signOut();
+
+function renderAuth(mode='login'){
+  const app = document.getElementById('app');
+  app.innerHTML = `
+    <div class="auth-box card">
+      <h2>${mode==='login' ? 'تسجيل الدخول' : 'حساب جديد'}</h2>
+      <div class="field">
+        <label>البريد الإلكتروني</label>
+        <input type="email" id="authEmail" placeholder="example@mail.com">
+      </div>
+      ${mode==='signup' ? `<div class="field"><label>الاسم</label><input type="text" id="authName" placeholder="اسمك بالكامل"></div>` : ''}
+      <div class="field">
+        <label>كلمة المرور</label>
+        <input type="password" id="authPass" placeholder="6 أحرف على الأقل">
+      </div>
+      <button class="btn block" id="authSubmit">${mode==='login' ? 'دخول' : 'إنشاء حساب'}</button>
+      <div class="switch-link" id="switchMode">
+        ${mode==='login' ? 'مالكش حساب؟ سجّل دلوقتي' : 'عندك حساب؟ سجّل دخول'}
+      </div>
+    </div>`;
+
+  document.getElementById('switchMode').onclick = ()=> renderAuth(mode==='login' ? 'signup' : 'login');
+
+  document.getElementById('authSubmit').onclick = async ()=>{
+    const email = document.getElementById('authEmail').value.trim();
+    const pass = document.getElementById('authPass').value;
+    if(!email || !pass){ toast('من فضلك املأ كل الحقول', 'error'); return; }
+    try{
+      if(mode==='login'){
+        await auth.signInWithEmailAndPassword(email, pass);
+      } else {
+        const name = document.getElementById('authName').value.trim() || email.split('@')[0];
+        const cred = await auth.createUserWithEmailAndPassword(email, pass);
+        await db.collection('users').doc(cred.user.uid).set({
+          name, email, role: ADMIN_EMAILS.includes(email) ? 'admin':'user', createdAt: Date.now()
+        });
+      }
+    }catch(e){ toast(translateAuthError(e), 'error'); }
+  };
+}
+
+function translateAuthError(e){
+  const map = {
+    'auth/user-not-found':'المستخدم غير موجود',
+    'auth/wrong-password':'كلمة المرور غير صحيحة',
+    'auth/email-already-in-use':'البريد الإلكتروني مستخدم بالفعل',
+    'auth/weak-password':'كلمة المرور ضعيفة (6 أحرف على الأقل)',
+    'auth/invalid-email':'البريد الإلكتروني غير صحيح'
+  };
+  return map[e.code] || 'حدث خطأ، حاول مرة أخرى';
+}
+
+// ---------------- DATA LOADING ----------------
+async function loadAllData(){
+  db.collection('trips').orderBy('createdAt','desc').onSnapshot(snap=>{
+    tripsCache = snap.docs.map(d=>({id:d.id, ...d.data()}));
+    renderTab();
+  });
+  db.collection('bookings').orderBy('createdAt','desc').onSnapshot(snap=>{
+    bookingsCache = snap.docs.map(d=>({id:d.id, ...d.data()}));
+    renderTab();
+  });
+}
+
+// ---------------- TABS ----------------
+document.querySelectorAll('.tab').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    currentTab = btn.dataset.tab;
+    document.querySelectorAll('.tab').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    renderTab();
+  });
+});
+
+function renderTab(){
+  if(!currentUser) return;
+  document.querySelectorAll('.tab').forEach(b=> b.classList.toggle('active', b.dataset.tab===currentTab));
+  if(currentTab==='trips') renderTrips();
+  else if(currentTab==='propose') renderPropose();
+  else if(currentTab==='mine') renderMine();
+  else if(currentTab==='admin') renderAdmin();
+}
+
+// ---------------- TAB: الرحلات المتاحة ----------------
+function renderTrips(){
+  const approved = tripsCache.filter(t=>t.status==='approved');
+  const app = document.getElementById('app');
+  if(approved.length===0){
+    app.innerHTML = `<div class="empty">لا توجد رحلات متاحة حاليًا 🌤️</div>`;
+    return;
+  }
+  app.innerHTML = approved.map(t=>{
+    const booked = bookingsCache.filter(b=>b.tripId===t.id).length;
+    const seatsLeft = (t.seatsTotal||0) - booked;
+    const full = seatsLeft <= 0;
+    return `
+    <div class="card">
+      <div class="trip-title">📍 ${escapeHtml(t.destination)}</div>
+      <div class="trip-meta">
+        <div>📅 <b>${fmtDate(t.date)}</b></div>
+        <div>💵 السعر: <b>${t.price} جنيه</b></div>
+        <div>🪑 المقاعد المتاحة: <b>${Math.max(seatsLeft,0)}</b> من ${t.seatsTotal}</div>
+      </div>
+      <div class="row">
+        <button class="btn block ${full?'secondary':''}" ${full?'disabled':''} onclick="openBooking('${t.id}')">
+          ${full ? 'اكتملت المقاعد' : 'احجز الآن'}
+        </button>
+        <button class="btn secondary block" onclick="shareTrip('${t.id}')">🔗 مشاركة</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function shareTrip(tripId){
+  const url = `${window.location.origin}${window.location.pathname}?ref=${currentUser.uid}&trip=${tripId}`;
+  navigator.clipboard?.writeText(url);
+  toast('تم نسخ رابط المشاركة! شاركه وهتاخد عمولتك من كل حجز', 'success');
+}
+
+function openBooking(tripId){
+  const t = tripsCache.find(x=>x.id===tripId);
+  if(!t) return;
+  const app = document.getElementById('app');
+  app.innerHTML = `
+    <div class="card">
+      <div class="trip-title">حجز: ${escapeHtml(t.destination)}</div>
+      <div class="trip-meta">${fmtDate(t.date)} · ${t.price} جنيه للفرد</div>
+      <hr class="divider">
+      <div class="field"><label>اسمك بالكامل</label><input id="bkName" value="${escapeHtml(currentUserData.name||'')}"></div>
+      <div class="field"><label>رقم الموبايل</label><input id="bkPhone" placeholder="01xxxxxxxxx"></div>
+      <div class="field"><label>عدد المقاعد</label><input id="bkSeats" type="number" min="1" value="1"></div>
+      <div class="row">
+        <button class="btn block" onclick="submitBooking('${t.id}')">تأكيد الحجز</button>
+        <button class="btn secondary block" onclick="renderTrips()">رجوع</button>
+      </div>
+    </div>`;
+}
+
+async function submitBooking(tripId){
+  const t = tripsCache.find(x=>x.id===tripId);
+  const name = document.getElementById('bkName').value.trim();
+  const phone = document.getElementById('bkPhone').value.trim();
+  const seats = parseInt(document.getElementById('bkSeats').value) || 1;
+  if(!name || !phone){ toast('من فضلك املأ الاسم والموبايل', 'error'); return; }
+
+  const amount = (t.price||0) * seats;
+  let commissionAmount = 0;
+  const referrerUid = (refParam && refParam !== currentUser.uid) ? refParam : (t.proposedBy || null);
+  if(referrerUid){
+    if(t.commissionType==='percent') commissionAmount = Math.round(amount * (t.commissionValue||0) / 100);
+    else if(t.commissionType==='fixed') commissionAmount = (t.commissionValue||0) * seats;
+  }
+
+  try{
+    await db.collection('bookings').add({
+      tripId, tripDestination: t.destination,
+      participantUid: currentUser.uid, participantName: name, participantPhone: phone,
+      seats, amount, paymentStatus:'unpaid', amountPaid:0,
+      referrerUid: referrerUid || null, commissionAmount, commissionPaid:false,
+      createdAt: Date.now()
+    });
+    toast('تم تسجيل حجزك بنجاح ✅', 'success');
+    refParam = null;
+    currentTab='trips'; renderTrips();
+  }catch(e){ toast('حدث خطأ أثناء الحجز', 'error'); }
+}
+
+// ---------------- TAB: اقترح رحلة ----------------
+function renderPropose(){
+  const app = document.getElementById('app');
+  app.innerHTML = `
+    <div class="card">
+      <h3>اقترح رحلة جديدة</h3>
+      <div class="trip-meta" style="margin-bottom:12px;">هتتراجع الرحلة من الأدمن الأول قبل ما تظهر للناس، وهيحدد لك نسبة أو مبلغ العمولة.</div>
+      <div class="field"><label>الوجهة</label><input id="pDest" placeholder="مثلاً: الغردقة"></div>
+      <div class="field"><label>تاريخ الرحلة</label><input id="pDate" type="date"></div>
+      <div class="field"><label>السعر المقترح للفرد (جنيه)</label><input id="pPrice" type="number" min="0"></div>
+      <div class="field"><label>عدد المقاعد</label><input id="pSeats" type="number" min="1"></div>
+      <div class="field"><label>تفاصيل إضافية (اختياري)</label><textarea id="pNotes" rows="3" placeholder="برنامج الرحلة، المواصلات..."></textarea></div>
+      <button class="btn block" onclick="submitProposal()">إرسال الاقتراح</button>
+    </div>`;
+}
+
+async function submitProposal(){
+  const destination = document.getElementById('pDest').value.trim();
+  const date = document.getElementById('pDate').value;
+  const price = parseFloat(document.getElementById('pPrice').value);
+  const seatsTotal = parseInt(document.getElementById('pSeats').value);
+  const notes = document.getElementById('pNotes').value.trim();
+
+  if(!destination || !date || !price || !seatsTotal){
+    toast('من فضلك املأ كل الحقول المطلوبة', 'error'); return;
+  }
+  try{
+    await db.collection('trips').add({
+      destination, date, price, seatsTotal, notes,
+      status:'pending', proposedBy: currentUser.uid, proposedByName: currentUserData.name,
+      commissionType:null, commissionValue:0, createdAt: Date.now()
+    });
+    toast('تم إرسال اقتراحك، في انتظار موافقة الأدمن', 'success');
+    currentTab='mine'; renderMine();
+  }catch(e){ toast('حدث خطأ أثناء الإرسال', 'error'); }
+}
+
+// ---------------- TAB: رحلاتي وأرباحي ----------------
+function renderMine(){
+  const myTrips = tripsCache.filter(t=>t.proposedBy===currentUser.uid);
+  const myCommissionBookings = bookingsCache.filter(b=>b.referrerUid===currentUser.uid);
+  const totalEarned = myCommissionBookings.reduce((s,b)=>s+(b.commissionAmount||0),0);
+  const totalPaidOut = myCommissionBookings.filter(b=>b.commissionPaid).reduce((s,b)=>s+(b.commissionAmount||0),0);
+  const totalPending = totalEarned - totalPaidOut;
+
+  const app = document.getElementById('app');
+  let html = `
+    <div class="stat-grid">
+      <div class="stat"><div class="num">${totalEarned}</div><div class="lbl">إجمالي عمولتك (جنيه)</div></div>
+      <div class="stat"><div class="num">${totalPending}</div><div class="lbl">لسه مستحق</div></div>
+    </div>
+    <h3 style="margin:6px 0 10px;">رحلاتي المقترحة</h3>`;
+
+  if(myTrips.length===0){
+    html += `<div class="empty">لسه ما اقترحتش أي رحلة</div>`;
+  } else {
+    html += myTrips.map(t=>{
+      const badgeClass = t.status==='approved'?'approved':t.status==='rejected'?'rejected':'pending';
+      const badgeText = t.status==='approved'?'معتمدة':t.status==='rejected'?'مرفوضة':'قيد المراجعة';
+      const shareUrl = `${window.location.origin}${window.location.pathname}?ref=${currentUser.uid}&trip=${t.id}`;
+      return `
+      <div class="card">
+        <div class="trip-title">📍 ${escapeHtml(t.destination)} <span class="badge ${badgeClass}">${badgeText}</span></div>
+        <div class="trip-meta">${fmtDate(t.date)} · ${t.price} جنيه · ${t.seatsTotal} مقعد</div>
+        ${t.status==='approved' ? `
+          <div class="trip-meta">عمولتك: <b>${t.commissionType==='percent' ? t.commissionValue+'%' : t.commissionValue+' جنيه/حجز'}</b></div>
+          <div class="link-box">${shareUrl}</div>
+          <button class="btn secondary block" onclick="shareTrip('${t.id}')">📋 نسخ رابط المشاركة</button>
+        ` : ''}
+      </div>`;
+    }).join('');
+  }
+
+  html += `<h3 style="margin:18px 0 10px;">حجوزات جالت من تسويقك</h3>`;
+  if(myCommissionBookings.length===0){
+    html += `<div class="empty">لسه معملتش أي عمولة</div>`;
+  } else {
+    html += myCommissionBookings.map(b=>`
+      <div class="card">
+        <div class="trip-title">${escapeHtml(b.tripDestination)}</div>
+        <div class="trip-meta">
+          الحاجز: ${escapeHtml(b.participantName)} · ${b.seats} مقعد<br>
+          عمولتك: <b>${b.commissionAmount} جنيه</b>
+          <span class="badge ${b.commissionPaid?'paid':'unpaid'}">${b.commissionPaid?'مدفوعة':'لسه'}</span>
+        </div>
+      </div>`).join('');
+  }
+  app.innerHTML = html;
+}
+
+// ---------------- TAB: الأدمن ----------------
+function renderAdmin(){
+  if(currentUserData.role !== 'admin'){ currentTab='trips'; renderTrips(); return; }
+  const pending = tripsCache.filter(t=>t.status==='pending');
+  const approved = tripsCache.filter(t=>t.status==='approved');
+  const totalRevenue = bookingsCache.reduce((s,b)=>s+(b.amountPaid||0),0);
+  const totalCommissionsDue = bookingsCache.filter(b=>!b.commissionPaid).reduce((s,b)=>s+(b.commissionAmount||0),0);
+
+  const app = document.getElementById('app');
+  let html = `
+    <div class="stat-grid">
+      <div class="stat"><div class="num">${totalRevenue}</div><div class="lbl">إجمالي المحصّل (جنيه)</div></div>
+      <div class="stat"><div class="num">${totalCommissionsDue}</div><div class="lbl">عمولات مستحقة</div></div>
+    </div>
+    <h3 style="margin:6px 0 10px;">رحلات في انتظار الموافقة (${pending.length})</h3>`;
+
+  if(pending.length===0){
+    html += `<div class="empty">لا يوجد اقتراحات جديدة</div>`;
+  } else {
+    html += pending.map(t=>`
+      <div class="card">
+        <div class="trip-title">📍 ${escapeHtml(t.destination)}</div>
+        <div class="trip-meta">
+          ${fmtDate(t.date)} · ${t.price} جنيه · ${t.seatsTotal} مقعد<br>
+          مقترح من: <b>${escapeHtml(t.proposedByName||'')}</b>
+          ${t.notes ? `<br>ملاحظات: ${escapeHtml(t.notes)}` : ''}
+        </div>
+        <div class="commission-form">
+          <label>نوع العمولة</label>
+          <select id="ctype_${t.id}">
+            <option value="percent">نسبة % من كل تذكرة</option>
+            <option value="fixed">مبلغ ثابت لكل حجز</option>
+          </select>
+          <label>القيمة</label>
+          <input id="cval_${t.id}" type="number" min="0" placeholder="مثلاً 10">
+        </div>
+        <div class="row" style="margin-top:10px;">
+          <button class="btn block" onclick="approveTrip('${t.id}')">✅ موافقة</button>
+          <button class="btn danger block" onclick="rejectTrip('${t.id}')">❌ رفض</button>
+        </div>
+      </div>`).join('');
+  }
+
+  html += `<h3 style="margin:18px 0 10px;">كل الحجوزات (${bookingsCache.length})</h3>`;
+  if(bookingsCache.length===0){
+    html += `<div class="empty">لا توجد حجوزات بعد</div>`;
+  } else {
+    html += bookingsCache.map(b=>`
+      <div class="card">
+        <div class="trip-title">${escapeHtml(b.tripDestination)}</div>
+        <div class="trip-meta">
+          ${escapeHtml(b.participantName)} · ${escapeHtml(b.participantPhone)} · ${b.seats} مقعد<br>
+          المطلوب: <b>${b.amount} جنيه</b> · المدفوع: <b>${b.amountPaid||0} جنيه</b>
+          <span class="badge ${b.paymentStatus}">${b.paymentStatus==='paid'?'مدفوع':b.paymentStatus==='partial'?'جزئي':'غير مدفوع'}</span>
+          ${b.referrerUid ? `<br>عمولة المسوّق: <b>${b.commissionAmount} جنيه</b> <span class="badge ${b.commissionPaid?'paid':'unpaid'}">${b.commissionPaid?'مدفوعة':'لسه'}</span>` : ''}
+        </div>
+        <div class="row">
+          <button class="btn secondary block" onclick="markPayment('${b.id}')">تحديث الدفع</button>
+          ${b.referrerUid && !b.commissionPaid ? `<button class="btn accent block" onclick="markCommissionPaid('${b.id}')">دفع العمولة</button>` : ''}
+        </div>
+      </div>`).join('');
+  }
+  app.innerHTML = html;
+}
+
+async function approveTrip(tripId){
+  const type = document.getElementById(`ctype_${tripId}`).value;
+  const val = parseFloat(document.getElementById(`cval_${tripId}`).value);
+  if(!val && val !== 0){ toast('من فضلك حدد قيمة العمولة', 'error'); return; }
+  await db.collection('trips').doc(tripId).update({
+    status:'approved', commissionType:type, commissionValue:val
+  });
+  toast('تم اعتماد الرحلة', 'success');
+}
+
+async function rejectTrip(tripId){
+  if(!confirm('متأكد من رفض الرحلة؟')) return;
+  await db.collection('trips').doc(tripId).update({status:'rejected'});
+  toast('تم رفض الرحلة', 'success');
+}
+
+async function markPayment(bookingId){
+  const b = bookingsCache.find(x=>x.id===bookingId);
+  const amount = prompt(`المبلغ المدفوع من إجمالي ${b.amount} جنيه:`, b.amountPaid||0);
+  if(amount===null) return;
+  const paid = parseFloat(amount) || 0;
+  const status = paid>=b.amount ? 'paid' : paid>0 ? 'partial' : 'unpaid';
+  await db.collection('bookings').doc(bookingId).update({amountPaid:paid, paymentStatus:status});
+  toast('تم تحديث حالة الدفع', 'success');
+}
+
+async function markCommissionPaid(bookingId){
+  if(!confirm('تأكيد دفع العمولة للمسوّق؟')) return;
+  await db.collection('bookings').doc(bookingId).update({commissionPaid:true});
+  toast('تم تسجيل دفع العمولة', 'success');
+}
+</script>
+</body>
+</html>
