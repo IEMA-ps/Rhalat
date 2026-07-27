@@ -406,6 +406,8 @@ let siteSettings = {
   heroSubtitle: 'اختار رحلتك، احجز مكانك، وشارك رابطك مع أصحابك، واكسب عمولة من كل حجز يتم من خلاله.',
   bookingMessageTemplate: 'مرحبًا {الاسم} 👋\nتم تسجيل حجزك في رحلة {الرحلة} بعدد {المقاعد} مقعد.\nالمبلغ المطلوب: {المبلغ} جنيه.\nبرجاء تحويل المبلغ تحت الحساب لتأكيد الحجز.\nشكرًا لثقتك بنا 🌹',
   heroImageUrl: '',
+  tripsHeroTitle: 'فين هتسافر بعد كده؟',
+  tripsHeroEyebrow: 'رحلاتك',
   showTripsSearchBar: true
 };
 
@@ -879,8 +881,8 @@ function renderTrips(){
     <div class="hero-banner">
       ${siteSettings.heroImageUrl ? `<img src="${escapeHtml(siteSettings.heroImageUrl)}" alt="">` : ''}
       <div class="hero-text">
-        <div class="hero-eyebrow">${userCity ? `رحلات ${escapeHtml(userCity)}` : 'رحلاتك'}</div>
-        <div class="hero-title">فين هتسافر بعد كده؟</div>
+        <div class="hero-eyebrow">${userCity ? `رحلات ${escapeHtml(userCity)}` : escapeHtml(siteSettings.tripsHeroEyebrow || 'رحلاتك')}</div>
+        <div class="hero-title">${escapeHtml(siteSettings.tripsHeroTitle || 'فين هتسافر بعد كده؟')}</div>
       </div>
     </div>
     ${siteSettings.showTripsSearchBar !== false ? `
@@ -1584,6 +1586,13 @@ function renderContacts(){
       <div class="field"><label>اسم (إضافة يدوية)</label><input id="cName" placeholder="اسم جهة الاتصال"></div>
       <div class="field"><label>رقم الموبايل</label><input id="cPhone" placeholder="01xxxxxxxxx"></div>
       <button class="btn secondary block" onclick="addContactManual()">➕ إضافة يدوي</button>
+      ${currentUserData.role==='admin' ? `
+      <hr class="divider">
+      <div class="trip-meta" style="margin-bottom:8px;">📊 رفع جماعي من ملف إكسل (متاح للأدمن فقط)</div>
+      <button class="btn secondary block" onclick="exportContactsTemplate()">⬇️ تحميل قالب إكسل</button>
+      <input type="file" id="contactsExcelFile" accept=".xlsx,.xls" style="display:none;" onchange="handleContactsImportFile(this)">
+      <button class="btn block" style="margin-top:8px;" onclick="document.getElementById('contactsExcelFile').click()">📤 رفع ملف إكسل</button>
+      ` : ''}
     </div>`;
 
   if(approvedTrips.length>0){
@@ -1704,10 +1713,8 @@ function renderContactsList(){
   html += `
     <div class="card">
       <label>عدد جهات الاتصال في الصفحة</label>
-      <select id="contactsPageSizeSelect" onchange="onContactsPageSizeChange()">
-        ${[10,20,50,100].map(n=>`<option value="${n}" ${contactsPageSize===n?'selected':''}>${n}</option>`).join('')}
-        <option value="all" ${contactsPageSize===Infinity?'selected':''}>الكل</option>
-      </select>
+      <input type="number" id="contactsPageSizeInput" min="1" step="1" value="${contactsPageSize===Infinity ? '' : contactsPageSize}" placeholder="اكتب أي رقم" onchange="onContactsPageSizeInput()" style="width:100%; padding:10px; border-radius:10px; border:1px solid var(--border);">
+      <button class="btn secondary block" style="margin-top:8px;" onclick="setContactsPageSizeAll()">عرض الكل في صفحة واحدة</button>
     </div>`;
 
   holder.innerHTML = html;
@@ -1719,10 +1726,18 @@ function goToContactsPage(p){
   renderContactsList();
 }
 
-function onContactsPageSizeChange(){
-  const sel = document.getElementById('contactsPageSizeSelect');
-  if(!sel) return;
-  contactsPageSize = sel.value==='all' ? Infinity : parseInt(sel.value,10);
+function onContactsPageSizeInput(){
+  const el = document.getElementById('contactsPageSizeInput');
+  if(!el) return;
+  const val = parseInt(el.value, 10);
+  if(!val || val<1){ toast('اكتب رقم صحيح أكبر من صفر', 'error'); return; }
+  contactsPageSize = val;
+  contactsPage = 1;
+  renderContactsList();
+}
+
+function setContactsPageSizeAll(){
+  contactsPageSize = Infinity;
   contactsPage = 1;
   renderContactsList();
 }
@@ -1791,6 +1806,78 @@ async function deleteContact(contactId){
   if(!confirm('حذف جهة الاتصال دي من قائمتك؟')) return;
   try{ await db.collection('contacts').doc(contactId).update({deletedByOwner:true}); }
   catch(e){ toast('تعذر الحذف', 'error'); }
+}
+
+// ---------------- استيراد جهات اتصال من إكسل (أدمن فقط) ----------------
+const CONTACTS_COL_NAME = 'الاسم';
+const CONTACTS_COL_PHONE = 'رقم الموبايل';
+
+function exportContactsTemplate(){
+  try{
+    const wb = XLSX.utils.book_new();
+    const sample = [
+      {[CONTACTS_COL_NAME]: 'أحمد محمد', [CONTACTS_COL_PHONE]: '01012345678'},
+      {[CONTACTS_COL_NAME]: 'سارة علي', [CONTACTS_COL_PHONE]: '01123456789'}
+    ];
+    const ws = XLSX.utils.json_to_sheet(sample);
+    XLSX.utils.book_append_sheet(wb, ws, 'جهات الاتصال');
+    XLSX.writeFile(wb, 'قالب_جهات_الاتصال.xlsx');
+  }catch(e){ toast('تعذر إنشاء ملف القالب', 'error'); }
+}
+
+function handleContactsImportFile(input){
+  const file = input.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = async (e)=>{
+    try{
+      const data = new Uint8Array(e.target.result);
+      const wb = XLSX.read(data, {type:'array'});
+      const sheet = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(sheet, {defval:''});
+      await importContactRows(rows);
+    }catch(err){
+      toast('تعذر قراءة الملف، تأكد إنه بنفس شكل القالب اللي اتنزّل', 'error');
+    }
+    input.value = '';
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+async function importContactRows(rows){
+  if(!rows.length){ toast('الملف فاضي، مفيش جهات اتصال تتضاف', 'error'); return; }
+  const cleanPhone = (p)=>String(p||'').replace(/\D/g,'').replace(/^20/,'0');
+  const existingPhones = new Set(contactsCache.filter(c=>!c.deletedByOwner).map(c=>cleanPhone(c.phone)));
+  const seenInFile = new Set();
+  const toAdd = [];
+  let skipped = 0;
+
+  rows.forEach(row=>{
+    const name = String(row[CONTACTS_COL_NAME]||'').trim();
+    const phone = cleanPhone(row[CONTACTS_COL_PHONE]);
+    if(!name || !PHONE_RE.test(phone)){ skipped++; return; }
+    if(existingPhones.has(phone) || seenInFile.has(phone)){ skipped++; return; }
+    seenInFile.add(phone);
+    toAdd.push({name, phone});
+  });
+
+  if(toAdd.length===0){ toast(`مفيش جهات اتصال جديدة تتضاف (اتخطى ${skipped} صف مكرر أو غير صالح)`, 'error'); return; }
+
+  try{
+    // تقسيم لدفعات (Batch) عشان حد الـ 500 عملية لكل Batch في Firestore
+    const CHUNK = 400;
+    for(let i=0;i<toAdd.length;i+=CHUNK){
+      const batch = db.batch();
+      toAdd.slice(i,i+CHUNK).forEach(c=>{
+        const ref = db.collection('contacts').doc();
+        batch.set(ref, {ownerUid: currentUser.uid, name: c.name, phone: c.phone, deletedByOwner:false, createdAt: Date.now()});
+      });
+      await batch.commit();
+    }
+    toast(`تم إضافة ${toAdd.length} جهة اتصال${skipped ? ` (اتخطى ${skipped} مكرر أو غير صالح)` : ''} ✅`, 'success');
+  }catch(e){
+    toast('حدث خطأ أثناء رفع الملف', 'error');
+  }
 }
 
 function sendContactWhatsApp(contactId, tripId){
@@ -2414,6 +2501,8 @@ function renderAdmin(){
           <img id="setHeroImgPreview" src="${escapeHtml(heroPreviewUrl)}" style="width:100%; max-height:140px; object-fit:cover; border-radius:12px; margin-bottom:8px; display:block;" class="${heroPreviewUrl ? '' : 'hidden'}" alt="صورة الهيرو">
           ${heroPreviewUrl ? `<button class="btn secondary block" onclick="removeHeroImage()">🗑️ إلغاء الصورة (رجوع للخلفية بدون صورة)</button>` : `<div class="trip-meta">من غير صورة، هتظهر خلفية متدرجة بس زي ما هي دلوقتي.</div>`}
         </div>
+        <div class="field"><label>الكلمة الصغيرة فوق العنوان (تظهر بس لو المستخدم مافيهوش مدينة محددة)</label><input id="setTripsHeroEyebrow" value="${escapeHtml(siteSettings.tripsHeroEyebrow||'')}"></div>
+        <div class="field"><label>العنوان الرئيسي على صورة صفحة الرحلات</label><input id="setTripsHeroTitle" value="${escapeHtml(siteSettings.tripsHeroTitle||'')}"></div>
         <div class="field" style="display:flex; align-items:center; gap:8px;">
           <input type="checkbox" id="setShowSearchBar" style="width:auto; margin:0;" ${siteSettings.showTripsSearchBar!==false?'checked':''}>
           <label style="margin:0;" for="setShowSearchBar">إظهار شريط البحث وأزرار الفلترة فوق صفحة الرحلات</label>
@@ -2500,10 +2589,14 @@ async function saveSiteSettings(){
   const heroTitle = document.getElementById('setHeroTitle').value.trim();
   const heroSubtitle = document.getElementById('setHeroSub').value.trim();
   const bookingMessageTemplate = document.getElementById('setBookingMsg').value.trim();
+  const tripsHeroTitleEl = document.getElementById('setTripsHeroTitle');
+  const tripsHeroEyebrowEl = document.getElementById('setTripsHeroEyebrow');
+  const tripsHeroTitle = tripsHeroTitleEl ? tripsHeroTitleEl.value.trim() : siteSettings.tripsHeroTitle;
+  const tripsHeroEyebrow = tripsHeroEyebrowEl ? tripsHeroEyebrowEl.value.trim() : siteSettings.tripsHeroEyebrow;
   const showSearchEl = document.getElementById('setShowSearchBar');
   const showTripsSearchBar = showSearchEl ? showSearchEl.checked : (siteSettings.showTripsSearchBar !== false);
   try{
-    await db.collection('settings').doc('site').set({logoUrl, siteName, heroTitle, heroSubtitle, bookingMessageTemplate, heroImageUrl, showTripsSearchBar}, {merge:true});
+    await db.collection('settings').doc('site').set({logoUrl, siteName, heroTitle, heroSubtitle, bookingMessageTemplate, heroImageUrl, tripsHeroTitle, tripsHeroEyebrow, showTripsSearchBar}, {merge:true});
     pendingLogoUrl = null;
     pendingHeroImageUrl = null;
     toast('تم حفظ الإعدادات', 'success');
